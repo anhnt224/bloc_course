@@ -5,6 +5,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'bloc/bloc_action.dart';
+import 'bloc/person.dart';
+import 'bloc/persons_bloc.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -28,106 +32,12 @@ class MyApp extends StatelessWidget {
   }
 }
 
-@immutable
-abstract class LoadAction {
-  const LoadAction();
-}
-
-@immutable
-class LoadPersonsAction extends LoadAction {
-  final PersonUrl url;
-  const LoadPersonsAction({
-    required this.url,
-  }) : super();
-}
-
-enum PersonUrl {
-  persons1,
-  persons2,
-}
-
-@immutable
-class Person {
-  final String name;
-  final int age;
-  const Person({
-    required this.name,
-    required this.age,
-  });
-
-  Map<String, dynamic> toMap() {
-    return <String, dynamic>{
-      'name': name,
-      'age': age,
-    };
-  }
-
-  factory Person.fromMap(Map<String, dynamic> map) {
-    return Person(
-      name: map['name'] as String,
-      age: map['age'] as int,
-    );
-  }
-
-  factory Person.fromJson(String source) =>
-      Person.fromMap(json.decode(source) as Map<String, dynamic>);
-}
-
 Future<List<Person>> getPersons(String url) => HttpClient()
     .getUrl(Uri.parse(url))
     .then((req) => req.close())
     .then((resp) => resp.transform(utf8.decoder).join())
     .then((str) => json.decode(str) as List<dynamic>)
     .then((list) => list.map((e) => Person.fromMap(e)).toList());
-
-@immutable
-class FetchResult {
-  final Iterable<Person>? persons;
-  final bool isRetrievedFromCache;
-  const FetchResult({
-    required this.persons,
-    required this.isRetrievedFromCache,
-  });
-
-  @override
-  String toString() =>
-      'FetchResult(persons: $persons, isRetrievedFromCache: $isRetrievedFromCache)';
-}
-
-class PersonBloc extends Bloc<LoadAction, FetchResult?> {
-  final Map<PersonUrl, Iterable<Person>> _cache = {};
-  PersonBloc() : super(null) {
-    on<LoadPersonsAction>(
-      (event, emit) async {
-        final url = event.url;
-        if (_cache.containsKey(url)) {
-          // we have the value in the cache
-          final cachedPersons = _cache[url];
-          final result =
-              FetchResult(persons: cachedPersons, isRetrievedFromCache: true);
-          emit(result);
-        } else {
-          final persons = await getPersons(url.urlString);
-          _cache[url] = persons;
-          final result =
-              FetchResult(persons: persons, isRetrievedFromCache: false);
-          emit(result);
-        }
-      },
-    );
-  }
-}
-
-extension UrlString on PersonUrl {
-  String get urlString {
-    switch (this) {
-      case PersonUrl.persons1:
-        return "http://127.0.0.1:5500/api/persons1.json";
-      case PersonUrl.persons2:
-        return "http://127.0.0.1:5500/api/persons2.json";
-    }
-  }
-}
 
 extension Subscript<T> on Iterable<T> {
   T? operator [](int index) => length > index ? elementAt(index) : null;
@@ -146,16 +56,14 @@ class HomePage extends StatelessWidget {
             children: [
               TextButton(
                   onPressed: () {
-                    context
-                        .read<PersonBloc>()
-                        .add(const LoadPersonsAction(url: PersonUrl.persons1));
+                    context.read<PersonBloc>().add(const LoadPersonsAction(
+                        url: person1Url, loader: getPersons));
                   },
                   child: const Text('Load json #1')),
               TextButton(
                   onPressed: () {
-                    context
-                        .read<PersonBloc>()
-                        .add(const LoadPersonsAction(url: PersonUrl.persons2));
+                    context.read<PersonBloc>().add(const LoadPersonsAction(
+                        url: person2Url, loader: getPersons));
                   },
                   child: const Text('Load json #2'))
             ],
@@ -165,7 +73,7 @@ class HomePage extends StatelessWidget {
           }, builder: (context, fetchResult) {
             final persons = fetchResult?.persons;
             if (persons == null) {
-              return SizedBox();
+              return const SizedBox();
             }
             return Expanded(
               child: ListView.builder(
